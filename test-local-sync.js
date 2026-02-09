@@ -1,32 +1,22 @@
+import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 
-export default async function handler(req, res) {
-  // Vérifier la méthode HTTP
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+// Importer la logique du handler
+async function testSync() {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseServiceRoleKey) {
+    console.error('❌ Missing Supabase environment variables');
+    process.exit(1);
   }
 
-  // Vérifier l'authentification CRON_SECRET
-  const cronSecret = req.headers['authorization']?.replace('Bearer ', '');
-  if (cronSecret !== process.env.CRON_SECRET) {
-    console.log('Unauthorized cron attempt');
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
+  const startTime = new Date();
+
+  console.log(`🧪 Testing sync locally at ${startTime.toISOString()}\n`);
 
   try {
-    // Initialiser le client Supabase
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-    if (!supabaseUrl || !supabaseServiceRoleKey) {
-      throw new Error('Missing Supabase environment variables');
-    }
-
-    const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
-    const startTime = new Date();
-
-    console.log(`[${startTime.toISOString()}] Starting satellite data synchronization`);
-
     // Récupérer tous les satellites
     const { data: satellites, error: satellitesError } = await supabase
       .from('satellites')
@@ -36,16 +26,7 @@ export default async function handler(req, res) {
       throw new Error(`Failed to fetch satellites: ${satellitesError.message}`);
     }
 
-    if (!satellites || satellites.length === 0) {
-      console.log('No satellites found in database');
-      return res.status(200).json({
-        success: true,
-        message: 'No satellites to sync',
-        timestamp: startTime.toISOString(),
-      });
-    }
-
-    console.log(`Found ${satellites.length} satellites to sync`);
+    console.log(`📊 Found ${satellites.length} satellites to sync\n`);
 
     let tleUpdated = 0;
     let tleUnchanged = 0;
@@ -54,46 +35,45 @@ export default async function handler(req, res) {
     let transmittersRemoved = 0;
     const syncErrors = [];
 
-    // Traiter chaque satellite
-    for (const satellite of satellites) {
+    // Limite pour test : seulement les 5 premiers satellites
+    const testSatellites = satellites.slice(0, 5);
+    console.log(`🔬 Testing with first ${testSatellites.length} satellites\n`);
+
+    for (const satellite of testSatellites) {
       try {
         const { id: satelliteId, norad_id: noradId, name } = satellite;
 
         if (!noradId) {
-          console.log(`Skipping satellite ${satelliteId} (${name}) - no NORAD ID`);
+          console.log(`⏭️  Skipping ${name} - no NORAD ID`);
           continue;
         }
 
-        console.log(`\nProcessing satellite: ${name} (NORAD: ${noradId})`);
+        console.log(`\n🛰️  Processing: ${name} (NORAD: ${noradId})`);
 
-        // ========== FETCH & UPDATE TLE ==========
+        // ========== TLE ==========
         try {
           const tleFetchUrl = `https://celestrak.com/NORAD/elements/gp.php?CATNR=${noradId}&FORMAT=tle`;
-          console.log(`Fetching TLE from: ${tleFetchUrl}`);
-
+          
           const tleResponse = await fetch(tleFetchUrl);
           if (!tleResponse.ok) {
-            throw new Error(`CelesTrak responded with status ${tleResponse.status}`);
+            throw new Error(`CelesTrak HTTP ${tleResponse.status}`);
           }
 
           const tleText = await tleResponse.text();
           const tleLines = tleText.trim().split('\n');
 
-          if (tleLines.length < 2) {
-            console.log(`No TLE data found for satellite ${noradId}`);
-          } else {
+          if (tleLines.length >= 2) {
             let tleLine1, tleLine2;
 
             if (tleLines.length === 3) {
               tleLine1 = tleLines[1].trim();
               tleLine2 = tleLines[2].trim();
-            } else if (tleLines.length === 2) {
+            } else {
               tleLine1 = tleLines[0].trim();
               tleLine2 = tleLines[1].trim();
             }
 
             if (tleLine1 && tleLine2) {
-              // Vérifier si le TLE a changé
               const { data: existingTLE } = await supabase
                 .from('tle')
                 .select('tle_line1, tle_line2')
@@ -105,14 +85,10 @@ export default async function handler(req, res) {
                 existingTLE.tle_line2 !== tleLine2;
 
               if (tleChanged) {
-                // Extraire l'epoch de la ligne 1
                 const yearStr = tleLine1.substring(18, 20);
                 const dayStr = tleLine1.substring(20, 32);
                 const epoch = `20${yearStr}-${dayStr}`;
 
-                console.log(`TLE changed - Updating with Epoch: ${epoch}`);
-
-                // Mettre à jour le TLE
                 const { error: tleError } = await supabase
                   .from('tle')
                   .upsert(
@@ -122,43 +98,37 @@ export default async function handler(req, res) {
                       tle_line2: tleLine2,
                       epoch: epoch,
                       source: 'celestrak',
-                      updated_at: new Date().toISOString(),
                     },
                     { onConflict: 'satellite_id' }
                   );
 
-                if (tleError) {
-                  throw new Error(`Failed to update TLE: ${tleError.message}`);
-                }
+                if (tleError) throw new Error(`TLE upsert failed: ${tleError.message}`);
 
                 tleUpdated++;
-                console.log(`✅ TLE updated for ${name}`);
+                console.log(`   ✅ TLE updated`);
               } else {
                 tleUnchanged++;
-                console.log(`⏭️  TLE unchanged for ${name}`);
+                console.log(`   ⏭️  TLE unchanged`);
               }
             }
           }
         } catch (tleErr) {
-          const errMsg = `TLE sync error for ${name}: ${tleErr.message}`;
-          console.log(errMsg);
-          syncErrors.push(errMsg);
+          console.log(`   ❌ TLE error: ${tleErr.message}`);
+          syncErrors.push(`TLE error for ${name}: ${tleErr.message}`);
         }
 
-        // ========== FETCH & SYNC TRANSMITTERS ==========
+        // ========== TRANSMITTERS ==========
         try {
           const transmitterUrl = `https://db.satnogs.org/api/transmitters/?satellite__norad_cat_id=${noradId}`;
-          console.log(`Fetching transmitters from: ${transmitterUrl}`);
-
+          
           const transmitterResponse = await fetch(transmitterUrl);
           if (!transmitterResponse.ok) {
-            throw new Error(`SatNOGS API responded with status ${transmitterResponse.status}`);
+            throw new Error(`SatNOGS HTTP ${transmitterResponse.status}`);
           }
 
           const transmitterData = await transmitterResponse.json();
           const apiTransmitters = Array.isArray(transmitterData) ? transmitterData : transmitterData.results || [];
 
-          // Récupérer les transmitters existants
           const { data: existingTransmitters } = await supabase
             .from('transmitters')
             .select('id, description, mode, alive, uplink_low, uplink_high, downlink_low, downlink_high')
@@ -172,7 +142,7 @@ export default async function handler(req, res) {
             apiTransmitters.map(tx => [tx.description || '', tx])
           );
 
-          // 1. Ajouter les nouveaux transmitters
+          // Ajouter nouveaux
           const toAdd = apiTransmitters.filter(tx => !existingMap.has(tx.description || ''));
           
           if (toAdd.length > 0) {
@@ -191,15 +161,14 @@ export default async function handler(req, res) {
               .from('transmitters')
               .insert(newTransmitters);
 
-            if (insertError) {
-              throw new Error(`Failed to insert transmitters: ${insertError.message}`);
-            }
+            if (insertError) throw new Error(`Insert failed: ${insertError.message}`);
 
             transmittersAdded += toAdd.length;
-            console.log(`➕ Added ${toAdd.length} new transmitters`);
+            console.log(`   ➕ Added ${toAdd.length} transmitters`);
           }
 
-          // 2. Mettre à jour les transmitters existants qui ont changé
+          // Mettre à jour existants
+          let updated = 0;
           for (const apiTx of apiTransmitters) {
             const existing = existingMap.get(apiTx.description || '');
             
@@ -222,20 +191,21 @@ export default async function handler(req, res) {
                     uplink_high: apiTx.uplink_high || null,
                     downlink_low: apiTx.downlink_low || null,
                     downlink_high: apiTx.downlink_high || null,
-                    updated_at: new Date().toISOString(),
                   })
                   .eq('id', existing.id);
 
-                if (updateError) {
-                  throw new Error(`Failed to update transmitter: ${updateError.message}`);
-                }
-
-                transmittersUpdated++;
+                if (updateError) throw new Error(`Update failed: ${updateError.message}`);
+                updated++;
               }
             }
           }
+          
+          if (updated > 0) {
+            transmittersUpdated += updated;
+            console.log(`   🔄 Updated ${updated} transmitters`);
+          }
 
-          // 3. Supprimer les transmitters qui n'existent plus dans l'API
+          // Supprimer obsolètes
           const toRemove = (existingTransmitters || []).filter(
             tx => !apiMap.has(tx.description)
           );
@@ -248,68 +218,52 @@ export default async function handler(req, res) {
               .delete()
               .in('id', idsToRemove);
 
-            if (deleteError) {
-              throw new Error(`Failed to delete transmitters: ${deleteError.message}`);
-            }
+            if (deleteError) throw new Error(`Delete failed: ${deleteError.message}`);
 
             transmittersRemoved += toRemove.length;
-            console.log(`🗑️  Removed ${toRemove.length} obsolete transmitters`);
+            console.log(`   🗑️  Removed ${toRemove.length} transmitters`);
           }
 
-          console.log(`✅ Transmitters synced for ${name}`);
+          if (toAdd.length === 0 && updated === 0 && toRemove.length === 0) {
+            console.log(`   ⏭️  Transmitters unchanged`);
+          }
 
         } catch (transmitterErr) {
-          const errMsg = `Transmitter sync error for ${name}: ${transmitterErr.message}`;
-          console.log(errMsg);
-          syncErrors.push(errMsg);
+          console.log(`   ❌ Transmitter error: ${transmitterErr.message}`);
+          syncErrors.push(`Transmitter error for ${name}: ${transmitterErr.message}`);
         }
 
-        // Rate limiting pour éviter de surcharger les APIs
         await new Promise(resolve => setTimeout(resolve, 500));
 
       } catch (satelliteErr) {
-        const errMsg = `Error processing satellite ${satellite.name}: ${satelliteErr.message}`;
-        console.log(errMsg);
-        syncErrors.push(errMsg);
+        console.log(`   ❌ Satellite error: ${satelliteErr.message}`);
+        syncErrors.push(`Error for ${satellite.name}: ${satelliteErr.message}`);
       }
     }
 
     const endTime = new Date();
     const duration = endTime - startTime;
 
-    console.log(`\n=== SYNC COMPLETED ===`);
-    console.log(`Duration: ${duration}ms`);
-    console.log(`TLEs updated: ${tleUpdated}`);
-    console.log(`TLEs unchanged: ${tleUnchanged}`);
-    console.log(`Transmitters added: ${transmittersAdded}`);
-    console.log(`Transmitters updated: ${transmittersUpdated}`);
-    console.log(`Transmitters removed: ${transmittersRemoved}`);
-    console.log(`Errors: ${syncErrors.length}`);
+    console.log(`\n${'='.repeat(50)}`);
+    console.log(`🎉 TEST SYNC COMPLETED`);
+    console.log(`${'='.repeat(50)}`);
+    console.log(`⏱️  Duration: ${Math.round(duration / 1000)}s`);
+    console.log(`📍 TLE updated: ${tleUpdated}`);
+    console.log(`📍 TLE unchanged: ${tleUnchanged}`);
+    console.log(`➕ Transmitters added: ${transmittersAdded}`);
+    console.log(`🔄 Transmitters updated: ${transmittersUpdated}`);
+    console.log(`🗑️  Transmitters removed: ${transmittersRemoved}`);
+    console.log(`❌ Errors: ${syncErrors.length}`);
+    
+    if (syncErrors.length > 0) {
+      console.log(`\n⚠️  Error details:`);
+      syncErrors.forEach(err => console.log(`   - ${err}`));
+    }
 
-    return res.status(200).json({
-      success: true,
-      timestamp: endTime.toISOString(),
-      duration: `${duration}ms`,
-      stats: {
-        tle: {
-          updated: tleUpdated,
-          unchanged: tleUnchanged,
-        },
-        transmitters: {
-          added: transmittersAdded,
-          updated: transmittersUpdated,
-          removed: transmittersRemoved,
-        },
-        errorCount: syncErrors.length,
-      },
-      errors: syncErrors.length > 0 ? syncErrors : undefined,
-    });
   } catch (error) {
-    console.error('Critical sync error:', error.message);
-    return res.status(500).json({
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString(),
-    });
+    console.error('💥 Critical error:', error.message);
+    process.exit(1);
   }
 }
+
+testSync();
