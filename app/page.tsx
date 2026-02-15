@@ -97,7 +97,7 @@ export default function Home() {
 
 
   return (
-    <main className="relative overflow-y-auto h-screen snap-y snap-mandatory scrollbar-hide">
+    <main className="relative overflow-y-auto overflow-x-hidden h-screen snap-y snap-proximity scrollbar-hide">
       {/* Coming soon banner */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 text-white text-center py-1.5 px-4 text-xs sm:text-sm font-medium shadow-lg">
         <span className="inline-flex items-center gap-1.5">
@@ -184,7 +184,7 @@ export default function Home() {
       </section>
 
       {/* Data Sources & Globe */}
-      <section className="relative z-10 h-screen snap-start snap-always flex flex-col overflow-y-auto">
+      <section className="relative z-10 h-screen snap-start snap-always flex flex-col">
 
       {/* Data Sources */}
       <div className="flex-shrink-0 w-full px-4 py-8 sm:py-12">
@@ -325,15 +325,15 @@ export default function Home() {
             {/* Pause button - side positioned */}
             <button
               onClick={() => setIsPaused(!isPaused)}
-              className="absolute -right-16 top-1/2 -translate-y-1/2 z-20 p-3 rounded-full bg-gradient-to-br from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white transition-all duration-300 shadow-lg hover:shadow-violet-500/50 hover:scale-110"
+              className="absolute -right-6 top-1/2 -translate-y-1/2 z-20 p-2 rounded-full bg-gradient-to-br from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white transition-all duration-300 shadow-lg hover:shadow-violet-500/50 hover:scale-110"
               title={isPaused ? "Resume" : "Pause"}
             >
               {isPaused ? (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
                 </svg>
               ) : (
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                 </svg>
               )}
@@ -373,9 +373,9 @@ export default function Home() {
           <div className="flex flex-col md:flex-row items-center justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-2 text-gray-400 text-sm">
               <span>Made with</span>
-              <span className="text-red-400 animate-pulse">♥</span>
-              <span>by the hamradio</span>
-              <span className="font-mono text-cyan-400 font-semibold">F4MDX</span>
+              <span className="text-red-600 animate-pulse">♥</span>
+              <span>by</span>
+              <span className="font-mono text-violet-600 font-semibold" style={{ textShadow: "0 0 10px rgba(124, 58, 237, 1)" }}>F4MDX</span>
             </div>
             <div className="flex items-center gap-6">
               <a
@@ -386,7 +386,7 @@ export default function Home() {
               </a>
               <span className="text-gray-700">·</span>
               <a
-                href="https://github.com/nugget"
+                href="https://github.com/nxugget"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-gray-500 hover:text-gray-300 text-sm transition-colors"

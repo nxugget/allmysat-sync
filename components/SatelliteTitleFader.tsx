@@ -4,14 +4,14 @@ import React, { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const satellites = [
-  { name: "ISS", color: "#60a5fa" },
-  { name: "NOAA-18", color: "#fde047" },
-  { name: "Hubble", color: "#f472b6" },
-  { name: "Starlink", color: "#34d399" },
-  { name: "Galileo", color: "#c084fc" },
+  { name: "International Space Station", color: "#60a5fa" },
+  { name: "NOAA", color: "#fde047" },
+  { name: "Diwata-2", color: "#f472b6" },
+  { name: "ASaudi-OSCAR 50", color: "#34d399" },
+  { name: "MSAT-OSCAR 91", color: "#c084fc" },
   { name: "Iridium", color: "#fb923c" },
-  { name: "GOES-18", color: "#f87171" },
-  { name: "GPS", color: "#22d3ee" },
+  { name: "GOES", color: "#f87171" },
+  { name: "Global Navigation Satellite System", color: "#22d3ee" },
 ];
 
 export function SatelliteTitleFader({
